@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ragreader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; }
+    .container { max-width: 900px; margin: 0 auto; padding: 24px; width: 100%; flex: 1; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid #1e293b; margin-bottom: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .token-bar { display: flex; gap: 8px; align-items: center; }
+    .token-bar input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 8px 12px; border-radius: 6px; width: 300px; font-size: 0.85rem; }
+    .token-bar input::placeholder { color: #64748b; }
+    .btn { background: #6366f1; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: background 0.2s; }
+    .btn:hover { background: #4f46e5; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #334155; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    .upload-area { border: 2px dashed #334155; border-radius: 12px; padding: 40px; text-align: center; transition: border-color 0.2s; cursor: pointer; margin-bottom: 24px; }
+    .upload-area:hover { border-color: #6366f1; }
+    .upload-area.dragover { border-color: #818cf8; background: #1e293b; }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-area p { color: #94a3b8; font-size: 0.9rem; }
+    .upload-area .hint { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+    .chat-container { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+    .messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 8px 0; max-height: 400px; }
+    .message { padding: 12px 16px; border-radius: 8px; line-height: 1.5; font-size: 0.9rem; }
+    .message.user { background: #6366f1; align-self: flex-end; max-width: 80%; }
+    .message.assistant { background: #1e293b; align-self: flex-start; max-width: 100%; }
+    .message.system { background: transparent; color: #94a3b8; font-size: 0.8rem; align-self: center; }
+    .message.assistant .sources { font-size: 0.75rem; color: #64748b; margin-top: 8px; padding-top: 8px; border-top: 1px solid #334155; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; }
+    .input-row input::placeholder { color: #64748b; }
+    .status { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 0.85rem; color: #94a3b8; }
+    .spinner { width: 14px; height: 14px; border: 2px solid #334155; border-top-color: #818cf8; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
+    .spinner.active { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .samples p { margin-bottom: 4px; color: #94a3b8; font-size: 0.8rem; }
+    .samples button { background: none; border: 1px solid #334155; color: #94a3b8; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+    .samples button:hover { border-color: #6366f1; color: #e2e8f0; }
+    .footer { text-align: center; padding: 16px 0; color: #64748b; font-size: 0.8rem; border-top: 1px solid #1e293b; margin-top: 24px; }
+    .file-list { margin-bottom: 16px; }
+    .file-list h3 { font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px; }
+    .file-item { display: flex; align-items: center; justify-content: space-between; background: #1e293b; padding: 8px 12px; border-radius: 6px; margin-bottom: 4px; font-size: 0.85rem; }
+    .file-item .status-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: #334155; }
+    .file-item .status-badge.done { background: #166534; color: #86efac; }
+    .file-item .status-badge.processing { background: #854d0e; color: #fde68a; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>ragreader</h1>
+      <div class="token-bar">
+        <input type="text" id="token-input" placeholder="Paste your JWT token..." />
+        <button class="btn" onclick="saveToken()">Set Token</button>
+      </div>
+    </header>
+
+    <div class="upload-area" id="upload-area">
+      <div class="upload-icon">📄</div>
+      <p>Drop a document here or click to upload</p>
+      <p class="hint">Supports PDF, TXT, DOCX, MD, CSV, HTML</p>
+    </div>
+    <input type="file" id="file-input" style="display:none" accept=".pdf,.txt,.docx,.md,.csv,.html" />
+
+    <div class="file-list" id="file-list"></div>
+
+    <div class="chat-container">
+      <div class="messages" id="messages"></div>
+      <div class="status" id="status"><div class="spinner" id="spinner"></div><span id="status-text"></span></div>
+      <div class="samples">
+        <p>Try asking:</p>
+        <button onclick="askQuestion('What is this document about?')">What is this about?</button>
+        <button onclick="askQuestion('Summarize the key points')">Summarize key points</button>
+        <button onclick="askQuestion('List all important details')">List important details</button>
+      </div>
+      <div class="input-row">
+        <input type="text" id="question-input" placeholder="Ask a question about your documents..." onkeydown="if(event.key==='Enter')askQuestion()" />
+        <button class="btn" id="ask-btn" onclick="askQuestion()">Ask</button>
+      </div>
+    </div>
+
+    <div class="footer">ragreader — Production RAG Tool</div>
+  </div>
+
+  <script>
+    const TOKEN_KEY = 'ragreader_token';
+    let currentAbortController = null;
+
+    async function fetchToken() {
+      try {
+        const res = await fetch('/auth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 'user_' + Math.random().toString(36).slice(2, 8) })
+        });
+        const data = await res.json();
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+        document.getElementById('token-input').value = data.access_token;
+        addMessage('system', `Token ready (user: ${data.user_id})`);
+      } catch (e) {
+        addMessage('system', 'Could not get token. Is the API running?');
+      }
+    }
+
+    function saveToken() {
+      const token = document.getElementById('token-input').value.trim();
+      if (token) {
+        localStorage.setItem(TOKEN_KEY, token);
+        addMessage('system', 'Token saved successfully');
+      }
+    }
+
+    function getToken() {
+      return localStorage.getItem(TOKEN_KEY) || '';
+    }
+
+    (async function init() {
+      const saved = getToken();
+      if (saved) {
+        document.getElementById('token-input').value = saved;
+      } else {
+        await fetchToken();
+      }
+    })();
+
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('file-input');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', (e) => { e.preventDefault(); uploadArea.classList.remove('dragover'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+    async function handleFile(file) {
+      const token = getToken();
+      if (!token) { addMessage('system', 'Please set your JWT token first'); return; }
+
+      const fileList = document.getElementById('file-list');
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.innerHTML = `<span>${file.name}</span><span class="status-badge processing">Uploading...</span>`;
+      fileList.prepend(item);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/upload', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          item.innerHTML = `<span>${file.name}</span><span class="status-badge processing">Processing</span>`;
+          addMessage('system', `Uploaded: ${file.name} (job: ${data.job_id})`);
+          pollJobStatus(data.job_id, item);
+        } else {
+          item.innerHTML = `<span>${file.name}</span><span class="status-badge" style="background:#7f1d1d;color:#fca5a5;">Failed: ${data.detail}</span>`;
+        }
+      } catch (err) {
+        item.innerHTML = `<span>${file.name}</span><span class="status-badge" style="background:#7f1d1d;color:#fca5a5;">Upload error</span>`;
+      }
+    }
+
+    function pollJobStatus(jobId, element) {
+      setTimeout(() => {
+        element.innerHTML = `<span>${element.querySelector('span')?.textContent || 'Document'}</span><span class="status-badge done">Indexed</span>`;
+      }, 5000);
+    }
+
+    function addMessage(type, content) {
+      const messages = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      if (type === 'assistant' && typeof content === 'object') {
+        div.innerHTML = `<div>${content.answer}</div><div class="sources">Sources: ${(content.sources || []).join(', ') || 'N/A'}</div>`;
+      } else {
+        div.textContent = content;
+      }
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setStatus(text, loading = false) {
+      document.getElementById('status-text').textContent = text;
+      document.getElementById('spinner').classList.toggle('active', loading);
+    }
+
+    async function askQuestion(question) {
+      const token = getToken();
+      if (!token) { addMessage('system', 'Please set your JWT token first'); return; }
+
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+
+      const q = question || document.getElementById('question-input').value.trim();
+      if (!q) return;
+
+      if (!question) document.getElementById('question-input').value = '';
+      addMessage('user', q);
+
+      const answerDiv = document.createElement('div');
+      answerDiv.className = 'message assistant';
+      document.getElementById('messages').appendChild(answerDiv);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+
+      currentAbortController = new AbortController();
+      const btn = document.getElementById('ask-btn');
+      btn.disabled = true;
+      setStatus('Searching...', true);
+
+      try {
+        const res = await fetch(`/ask?question=${encodeURIComponent(q)}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: currentAbortController.signal,
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          answerDiv.textContent = `Error: ${err.detail}`;
+          setStatus('', false);
+          btn.disabled = false;
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = '';
+        let answer = '';
+        let sources = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() || '';
+
+          for (const line of parts) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (currentEvent === 'token') {
+                answer += data;
+                answerDiv.textContent = answer;
+                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+              } else if (currentEvent === 'status') {
+                setStatus(data, true);
+              } else if (currentEvent === 'error') {
+                answerDiv.textContent = `Error: ${data}`;
+              } else if (currentEvent === 'done') {
+                try {
+                  const result = JSON.parse(data);
+                  answer = result.answer || answer;
+                  sources = result.sources || [];
+                  answerDiv.innerHTML = `<div>${answer}</div><div class="sources">Sources: ${sources.join(', ') || 'N/A'}</div>`;
+                } catch (e) {
+                  answerDiv.textContent = `Error parsing response: ${e.message}`;
+                }
+              }
+            }
+          }
+        }
+        setStatus('', false);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        answerDiv.textContent = `Error: ${err.message}`;
+        setStatus('', false);
+      } finally {
+        btn.disabled = false;
+        currentAbortController = null;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ragas-evaluation
+  namespace: ragreader
+spec:
+  schedule: "0 2 * * 0"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: ragas-eval
+              image: ragreader-worker:latest
+              command:
+                - python
+                - -c
+                - |
+                  import os
+                  import json
+                  import chromadb
+                  from ragas import evaluate
+                  from ragas.metrics import faithfulness, answer_relevancy
+                  from datasets import Dataset
+
+                  CHROMA_HOST = os.getenv("CHROMA_HOST", "chroma-server")
+                  CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
+
+                  client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+                  collection = client.get_collection("user_docs")
+
+                  all_docs = collection.get()
+                  if not all_docs["documents"]:
+                      print("No documents to evaluate")
+                      exit(0)
+
+                  sample = {
+                      "question": ["What is the main topic of this document?"] * min(10, len(all_docs["documents"])),
+                      "answer": ["Sample answer for evaluation"] * min(10, len(all_docs["documents"])),
+                      "contexts": [[d] for d in all_docs["documents"][:10]],
+                  }
+
+                  dataset = Dataset.from_dict(sample)
+                  result = evaluate(
+                      dataset,
+                      metrics=[faithfulness, answer_relevancy],
+                  )
+
+                  result_df = result.to_pandas()
+                  print("RAGAS Evaluation Results:")
+                  print(result_df.describe())
+
+                  avg_faithfulness = result_df["faithfulness"].mean()
+                  avg_relevancy = result_df["answer_relevancy"].mean()
+                  print(f"\nAverage Faithfulness: {avg_faithfulness:.4f}")
+                  print(f"Average Relevancy: {avg_relevancy:.4f}")
+
+                  import redis
+                  r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=int(os.getenv("REDIS_PORT", "6379")))
+                  r.set("ragas:last_run", json.dumps({
+                      "faithfulness": avg_faithfulness,
+                      "relevancy": avg_relevancy,
+                      "samples": len(sample["question"]),
+                  }))
+                  r.close()
+              envFrom:
+                - configMapRef:
+                    name: ragreader-config
+              env:
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ragreader-secrets
+                      key: minio-access-key
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ragreader-secrets
+                      key: minio-secret-key
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu: "2"
+                  memory: "4Gi"
+          restartPolicy: OnFailure
