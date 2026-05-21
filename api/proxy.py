@@ -1,11 +1,32 @@
-import os, sys, json, uuid, io, re, textwrap, mimetypes
+import os, sys, json, uuid, io, re, textwrap, mimetypes, hmac, hashlib, time
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
+SECRET_KEY = hashlib.sha256(b'ragbot_vercel_2024').hexdigest()
 DOCS_DIR = '/tmp/ragbot_docs'
-AUTH_DIR = '/tmp/ragbot_auth'
 os.makedirs(DOCS_DIR, exist_ok=True)
-os.makedirs(AUTH_DIR, exist_ok=True)
+
+def make_token(user_id):
+    ts = str(int(time.time()))
+    raw = f'{user_id}:{ts}'
+    sig = hmac.new(SECRET_KEY.encode(), raw.encode(), hashlib.sha256).hexdigest()[:16]
+    return f'tok_{user_id}_{ts}_{sig}'
+
+def verify_token(auth_header):
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+    parts = auth_header[7:].split('_')
+    if len(parts) < 4 or parts[0] != 'tok':
+        return None
+    user_id = parts[1]
+    ts = parts[2]
+    sig = parts[3]
+    expected = hmac.new(SECRET_KEY.encode(), f'{user_id}:{ts}'.encode(), hashlib.sha256).hexdigest()[:16]
+    if sig != expected:
+        return None
+    if int(ts) < time.time() - 86400 * 7:
+        return None
+    return {'user_id': user_id, 'created': ts}
 
 def log(msg):
     print(str(msg), file=sys.stderr)
@@ -121,15 +142,13 @@ def app(environ, start_response):
         return json_response(start_response, {'status': 'ok', 'docs': len(os.listdir(DOCS_DIR)) // 2})
 
     if route_path.startswith('auth/token') and method == 'POST':
-        token = 'tok_' + uuid.uuid4().hex[:24]
         user_id = 'user'
         try:
             if body:
                 d = json.loads(body.decode())
                 user_id = d.get('user_id', 'user')
         except: pass
-        with open(os.path.join(AUTH_DIR, token), 'w') as f:
-            json.dump({'user_id': user_id, 'created': datetime.utcnow().isoformat()}, f)
+        token = make_token(user_id)
         return json_response(start_response, {'access_token': token, 'token_type': 'bearer'})
 
     if not route_path or route_path == 'static/index.html' or route_path == 'index.html':

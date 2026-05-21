@@ -128,6 +128,34 @@ const API = window.location.hostname === 'localhost' || window.location.hostname
 
 function $(id) { return document.getElementById(id); }
 
+async function ensureToken() {
+  if (!autoToken) {
+    const u = 'user_' + Math.random().toString(36).slice(2, 8);
+    const res = await fetch(`${API}/auth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({user_id: u}) });
+    if (res.ok) {
+      const d = await res.json();
+      autoToken = d.access_token;
+      localStorage.setItem('ragbot_token', autoToken);
+    }
+  }
+  return !!autoToken;
+}
+
+async function apiFetch(path, opts = {}) {
+  if (!autoToken && !await ensureToken()) return null;
+  opts.headers = { ...opts.headers, 'Authorization': 'Bearer ' + autoToken };
+  let res = await fetch(`${API}${path}`, opts);
+  if (res.status === 401) {
+    localStorage.removeItem('ragbot_token');
+    autoToken = '';
+    if (await ensureToken()) {
+      opts.headers['Authorization'] = 'Bearer ' + autoToken;
+      res = await fetch(`${API}${path}`, opts);
+    }
+  }
+  return res;
+}
+
 function setOnline(online) {
   const dot = $('status-dot');
   const status = $('api-status');
@@ -191,7 +219,8 @@ async function uploadFile(file) {
   const form = new FormData();
   form.append('file', file);
   try {
-    const res = await fetch(`${API}/upload`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + autoToken }, body: form });
+    const res = await apiFetch('/upload', { method: 'POST', body: form });
+    if (!res) { addMsg('system', 'Upload failed: no connection'); return; }
     const d = await res.json();
     if (res.ok) {
       addMsg('system', 'Indexed ' + file.name + ' (' + d.chunks + ' chunks)');
@@ -207,7 +236,7 @@ async function uploadFile(file) {
 async function refreshDocs() {
   if (!autoToken) return;
   try {
-    const res = await fetch(`${API}/documents`, { headers: { 'Authorization': 'Bearer ' + autoToken } });
+    const res = await apiFetch('/documents');
     const d = await res.json();
     const container = $('docs-container');
     const empty = $('empty-docs');
@@ -280,11 +309,11 @@ async function ask(q) {
   setStatus('Searching...', true);
 
   try {
-    const res = await fetch(`${API}/ask?question=${encodeURIComponent(question)}`, {
+    const res = await apiFetch(`/ask?question=${encodeURIComponent(question)}`, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + autoToken },
       signal: currentAbort.signal,
     });
+    if (!res) { answerDiv.querySelector('.content').textContent = 'Server unreachable'; setStatus('', false); $('ask-btn').disabled = false; return; }
 
     if (!res.ok) {
       const err = await res.json();
