@@ -129,6 +129,19 @@ def app(environ, start_response):
             json.dump({'user_id': user_id, 'created': datetime.utcnow().isoformat()}, f)
         return json_response(start_response, {'access_token': token, 'token_type': 'bearer'})
 
+    if not route_path or route_path == 'static/index.html' or route_path == 'index.html':
+        dir_path = os.path.dirname(os.path.abspath(__file__))
+        for p in [
+            os.path.join(dir_path, '..', 'static', 'index.html'),
+            os.path.join(dir_path, '..', 'public', 'static', 'index.html'),
+            os.path.join(dir_path, '..', 'index.html'),
+        ]:
+            if os.path.exists(p):
+                with open(p, 'rb') as f:
+                    content = f.read()
+                start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')] + CORS_HEADERS)
+                return [content]
+
     user = verify_token(ah)
     if not user:
         return json_response(start_response, {'detail': 'Invalid token'}, '401 Unauthorized')
@@ -187,17 +200,5 @@ def app(environ, start_response):
         h = [('Content-Type', 'application/json; charset=utf-8')] + CORS_HEADERS
         start_response('200 OK', h)
         return [resp]
-
-    dir_path = os.path.dirname(os.path.abspath(__file__))
-    for p in [
-        os.path.join(dir_path, '..', 'static', 'index.html'),
-        os.path.join(dir_path, '..', 'public', 'static', 'index.html'),
-        os.path.join(dir_path, '..', 'index.html'),
-    ]:
-        if os.path.exists(p):
-            with open(p, 'rb') as f:
-                content = f.read()
-            start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')] + CORS_HEADERS)
-            return [content]
 
     return json_response(start_response, {'error': 'Not found'}, '404 Not Found')
