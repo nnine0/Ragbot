@@ -1,5 +1,4 @@
 {
-  "name": "ragbot",
   "version": 2,
   "functions": {
     "api/**/*.py": {
@@ -11,8 +10,5 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/proxy.py?path=$1" },
     { "src": "/(.*)", "dest": "/static/$1" }
-  ],
-  "overrides": {
-    "static/index.html": { "contentType": "text/html" }
-  }
+  ]
 }
