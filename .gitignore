@@ -11,3 +11,4 @@ minio-data/
 redis-data/
 .DS_Store
 *.log
+.vercel
