@@ -1,4 +1,4 @@
-import os, sys, json, uuid, io, re, textwrap, mimetypes, hmac, hashlib, time
+import os, sys, json, uuid, io, re, textwrap, mimetypes, hmac, hashlib, time, base64
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
@@ -8,25 +8,30 @@ os.makedirs(DOCS_DIR, exist_ok=True)
 
 def make_token(user_id):
     ts = str(int(time.time()))
-    raw = f'{user_id}:{ts}'
-    sig = hmac.new(SECRET_KEY.encode(), raw.encode(), hashlib.sha256).hexdigest()[:16]
-    return f'tok_{user_id}_{ts}_{sig}'
+    payload = f'{user_id}:{ts}'.encode()
+    sig = hmac.new(SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest()[:16]
+    b64 = base64.urlsafe_b64encode(payload).rstrip(b'=').decode()
+    return f'tok.{b64}.{sig}'
 
 def verify_token(auth_header):
     if not auth_header or not auth_header.startswith('Bearer '):
         return None
-    parts = auth_header[7:].split('_')
-    if len(parts) < 4 or parts[0] != 'tok':
+    parts = auth_header[7:].split('.')
+    if len(parts) != 3 or parts[0] != 'tok':
         return None
-    user_id = parts[1]
-    ts = parts[2]
-    sig = parts[3]
-    expected = hmac.new(SECRET_KEY.encode(), f'{user_id}:{ts}'.encode(), hashlib.sha256).hexdigest()[:16]
-    if sig != expected:
+    try:
+        b64 = parts[1] + '=='
+        payload = base64.urlsafe_b64decode(b64).decode()
+        user_id, ts = payload.rsplit(':', 1)
+        sig = parts[2]
+        expected = hmac.new(SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+        if sig != expected:
+            return None
+        if int(ts) < time.time() - 86400 * 7:
+            return None
+        return {'user_id': user_id, 'created': ts}
+    except Exception:
         return None
-    if int(ts) < time.time() - 86400 * 7:
-        return None
-    return {'user_id': user_id, 'created': ts}
 
 def log(msg):
     print(str(msg), file=sys.stderr)
