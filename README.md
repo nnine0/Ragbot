@@ -1,28 +1,31 @@
 <div align="center">
-  <iframe src="https://nnine0.github.io/Ragbot/" width="100%" height="600px" style="border: 1px solid #30363d; border-radius: 8px;" title="Ragbot"></iframe>
+  <br>
+  <h1>Ragbot</h1>
+  <p><em>Drag-and-drop RAG chatbot</em></p>
+  <br>
+  <a href="https://nnine0.github.io/Ragbot/" style="display:inline-block;padding:14px 40px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:1.2rem;">Launch Ragbot →</a>
   <br><br>
-  <a href="https://nnine0.github.io/Ragbot/" target="_blank"><strong>Open Ragbot ↗</strong></a>
+  <a href="https://nnine0.github.io/Ragbot/" style="color:#818cf8;">nnine0.github.io/Ragbot</a>
+  <br><br>
+  <sub>ChromaDB · MinIO · Redis · FastAPI · GitHub Pages</sub>
+  <br><br>
 </div>
 
 ---
 
-# Ragbot
-
-Drag-and-drop RAG chatbot with ChromaDB, MinIO, and Redis.
-
 ## Architecture
 
 ```
-Client (static HTML/JS)
+Client (HTML/JS)
     │
-    ├── /api/* ──→ Vercel Proxy ──→ FastAPI Backend
+    ├── /api/* ──→ Vercel Proxy ──→ FastAPI
     │                                    │
     │                              ┌─────┼─────────┐
     │                              │     │         │
     │                           ChromaDB  MinIO   Redis
     │                           (vectors) (files) (cache)
     │
-    └── static files ──→ GitHub Pages / Vercel
+    └── static ──→ GitHub Pages / Vercel
 ```
 
 ## Quick Start
