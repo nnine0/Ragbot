@@ -1,6 +1,7 @@
 import os, sys, json, uuid, io, re, textwrap, mimetypes, hmac, hashlib, time, base64
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
+import urllib.request
 
 SECRET_KEY = hashlib.sha256(b'ragbot_vercel_2024').hexdigest()
 DOCS_DIR = '/tmp/ragbot_docs'
@@ -210,21 +211,37 @@ def app(environ, start_response):
                     meta = json.load(f)
                     docs.append(meta)
 
-        results = search_texts(question, docs)
-        if results:
-            answer = f'Found {len(results)} relevant document(s)\n\n'
-            for r in results:
-                answer += f'From {r["filename"]}:\n{r["snippet"][:300]}\n---\n'
-            used_docs = list(set(r['filename'] for r in results))
-        else:
-            doc_names = [d['filename'] for d in docs]
-            if doc_names:
-                answer = f'No specific matches found. Try asking about: {", ".join(doc_names)}'
-                used_docs = doc_names
+        context_docs = search_texts(question, docs)
+        if not context_docs and docs:
+            context_docs = [{'filename': d['filename'], 'snippet': d['text'][:1000], 'score': 0} for d in docs[:3]]
+        context = '\n\n'.join(f'From {r["filename"]}:\n{r["snippet"][:1000]}' for r in context_docs) if context_docs else ''
+        filenames = list(set(r['filename'] for r in context_docs)) if context_docs else []
+
+        hf_token = os.environ.get('HF_TOKEN', '')
+        answer = None
+        if context:
+            prompt = f'Answer the question based only on the provided context.\n\nContext:\n{context[:3000]}\n\nQuestion: {question}\n\nAnswer:'
+            try:
+                req_body = json.dumps({'inputs': prompt, 'parameters': {'max_new_tokens': 300, 'temperature': 0.3}}).encode()
+                headers = {'Content-Type': 'application/json'}
+                if hf_token:
+                    headers['Authorization'] = f'Bearer {hf_token}'
+                req = urllib.request.Request('https://api-inference.huggingface.co/models/google/flan-t5-base', data=req_body, headers=headers, method='POST')
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read())
+                    if isinstance(result, list) and len(result) > 0:
+                        answer = result[0].get('generated_text', '').strip()
+            except Exception as e:
+                log(f'HF API error: {e}')
+
+        if not answer:
+            if context_docs:
+                answer = f'Based on your documents:\n\n{context_docs[0]["snippet"][:500]}'
+            elif docs:
+                answer = f'I found documents: {", ".join(f["filename"] for f in docs)}. Ask a specific question about them.'
             else:
                 answer = 'No documents uploaded yet. Upload a file to get started.'
-                used_docs = []
-        resp = json.dumps({'answer': answer, 'sources': [], 'filenames': used_docs, 'type': 'done'}).encode()
+        resp = json.dumps({'answer': answer, 'sources': [], 'filenames': filenames, 'type': 'done'}).encode()
         h = [('Content-Type', 'application/json; charset=utf-8')] + CORS_HEADERS
         start_response('200 OK', h)
         return [resp]
