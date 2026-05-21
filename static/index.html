@@ -290,44 +290,52 @@ async function ask(q) {
       return;
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let curEvent = '';
-    let sources = [];
-    let filenames = [];
+    const ct = res.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      const d = await res.json();
+      answerText = d.answer || '';
+      answerDiv.innerHTML = '<div>' + answerText + '</div>';
+      if (d.filenames && d.filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + d.filenames.join(', ') + '</div>';
+    } else {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let curEvent = '';
+      let sources = [];
+      let filenames = [];
 
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
 
-      buf += decoder.decode(value, {stream: true});
-      const parts = buf.split('\n');
-      buf = parts.pop() || '';
+        buf += decoder.decode(value, {stream: true});
+        const parts = buf.split('\n');
+        buf = parts.pop() || '';
 
-      for (const line of parts) {
-        if (line.startsWith('event: ')) { curEvent = line.slice(7).trim(); }
-        else if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          if (curEvent === 'token') {
-            answerText += data;
-            answerDiv.querySelector('.content').textContent = answerText;
-            $('messages').scrollTop = $('messages').scrollHeight;
-          } else if (curEvent === 'status') {
-            setStatus(data, true);
-          } else if (curEvent === 'error') {
-            answerDiv.querySelector('.content').textContent = 'Error: ' + data;
-            setStatus('', false);
-          } else if (curEvent === 'done') {
-            try {
-              const r = JSON.parse(data);
-              answerText = r.answer || answerText;
-              sources = r.sources || [];
-              filenames = r.filenames || [];
-              answerDiv.innerHTML = '<div>' + answerText + '</div>';
-              if (sources.length) answerDiv.innerHTML += '<div class="sources">Chunks: ' + sources.slice(0,3).join(', ') + '</div>';
-              if (filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + filenames.join(', ') + '</div>';
-            } catch(e) { answerDiv.querySelector('.content').textContent = 'Parse error'; }
+        for (const line of parts) {
+          if (line.startsWith('event: ')) { curEvent = line.slice(7).trim(); }
+          else if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (curEvent === 'token') {
+              answerText += data;
+              answerDiv.querySelector('.content').textContent = answerText;
+              $('messages').scrollTop = $('messages').scrollHeight;
+            } else if (curEvent === 'status') {
+              setStatus(data, true);
+            } else if (curEvent === 'error') {
+              answerDiv.querySelector('.content').textContent = 'Error: ' + data;
+              setStatus('', false);
+            } else if (curEvent === 'done') {
+              try {
+                const r = JSON.parse(data);
+                answerText = r.answer || answerText;
+                sources = r.sources || [];
+                filenames = r.filenames || [];
+                answerDiv.innerHTML = '<div>' + answerText + '</div>';
+                if (sources.length) answerDiv.innerHTML += '<div class="sources">Chunks: ' + sources.slice(0,3).join(', ') + '</div>';
+                if (filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + filenames.join(', ') + '</div>';
+              } catch(e) { answerDiv.querySelector('.content').textContent = 'Parse error'; }
+            }
           }
         }
       }
