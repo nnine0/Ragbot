@@ -4,6 +4,7 @@ import json
 import urllib.request
 import urllib.parse
 
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8080")
 
 
@@ -13,8 +14,6 @@ def log(msg):
 
 def app(environ, start_response):
     path = environ.get("PATH_INFO", "").lstrip("/")
-    if path == "api/proxy.py" or not path:
-        path = ""
 
     qs = environ.get("QUERY_STRING", "")
     params = urllib.parse.parse_qs(qs)
@@ -23,6 +22,24 @@ def app(environ, start_response):
         routed_path = params["path"][0]
     else:
         routed_path = path
+
+    if not routed_path or routed_path == "static/index.html":
+        dir_path = os.path.dirname(os.path.abspath(__file__))
+        static_path = os.path.join(dir_path, "..", "static", "index.html")
+        if not os.path.exists(static_path):
+            static_path = os.path.join(dir_path, "..", "public", "static", "index.html")
+        if not os.path.exists(static_path):
+            static_path = os.path.join(dir_path, "..", "index.html")
+        try:
+            with open(static_path, "rb") as f:
+                content = f.read()
+            start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+            return [content]
+        except Exception as e:
+            log(f"Static file error: {e}")
+            err = json.dumps({"error": "Not found"})
+            start_response("404 Not Found", [("Content-Type", "application/json")])
+            return [err.encode()]
 
     target = f"{BACKEND_URL}/{routed_path}"
     qs_params = {k: v for k, v in params.items() if k != "path"}
