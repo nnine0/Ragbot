@@ -183,6 +183,10 @@ fileInput.addEventListener('change', () => { for (const f of fileInput.files) up
 
 async function uploadFile(file) {
   if (!autoToken) { addMsg('system', 'Server unreachable — start the Docker backend'); return; }
+  if (file.size > 4.5 * 1024 * 1024) {
+    addMsg('system', `File too large (${(file.size / 1024 / 1024).toFixed(1)} MiB) — max 4.5 MiB`);
+    return;
+  }
   addMsg('system', 'Uploading ' + file.name + '...');
   const form = new FormData();
   form.append('file', file);
