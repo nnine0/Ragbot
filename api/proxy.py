@@ -117,6 +117,9 @@ def app(environ, start_response):
     if route_path.startswith('api/'):
         route_path = route_path[4:]
 
+    if route_path.startswith('health') and method == 'GET':
+        return json_response(start_response, {'status': 'ok', 'docs': len(os.listdir(DOCS_DIR)) // 2})
+
     if route_path.startswith('auth/token') and method == 'POST':
         token = 'tok_' + uuid.uuid4().hex[:24]
         user_id = 'user'
@@ -147,18 +150,24 @@ def app(environ, start_response):
         return json_response(start_response, {'detail': 'Invalid token'}, '401 Unauthorized')
 
     if route_path.startswith('upload') and method == 'POST':
-        parts = parse_multipart(body, ct)
-        f = parts.get('file', {})
-        if not f or not f.get('data'):
-            return json_response(start_response, {'detail': 'No file'}, '400 Bad Request')
-        filename = f['filename'] or 'unnamed'
-        fpath = os.path.join(DOCS_DIR, filename)
-        with open(fpath, 'wb') as out:
-            out.write(f['data'])
-        text = extract_text(f['data'], filename)
-        with open(fpath + '.meta', 'w') as out:
-            json.dump({'filename': filename, 'text': text, 'size': len(f['data']), 'uploaded': datetime.utcnow().isoformat()}, out)
-        return json_response(start_response, {'filename': filename, 'chunks': max(1, len(text) // 500)})
+        try:
+            if not body:
+                return json_response(start_response, {'detail': 'Empty request body'}, '400 Bad Request')
+            parts = parse_multipart(body, ct)
+            f = parts.get('file', {})
+            if not f or not f.get('data'):
+                return json_response(start_response, {'detail': 'No file in upload'}, '400 Bad Request')
+            filename = f['filename'] or 'unnamed'
+            fpath = os.path.join(DOCS_DIR, filename)
+            with open(fpath, 'wb') as out:
+                out.write(f['data'])
+            text = extract_text(f['data'], filename)
+            with open(fpath + '.meta', 'w') as out:
+                json.dump({'filename': filename, 'text': text, 'size': len(f['data']), 'uploaded': datetime.utcnow().isoformat()}, out)
+            return json_response(start_response, {'filename': filename, 'chunks': max(1, len(text) // 500)})
+        except Exception as e:
+            log(f'Upload error: {e}')
+            return json_response(start_response, {'detail': f'Upload failed: {e}'}, '500 Internal Server Error')
 
     if route_path.startswith('documents') and method == 'GET':
         docs = []
@@ -168,6 +177,11 @@ def app(environ, start_response):
                     meta = json.load(f)
                     docs.append(meta['filename'])
         return json_response(start_response, {'documents': docs})
+
+    if route_path.startswith('documents') and method == 'DELETE':
+        for fn in os.listdir(DOCS_DIR):
+            os.remove(os.path.join(DOCS_DIR, fn))
+        return json_response(start_response, {'status': 'cleared'})
 
     if route_path.startswith('ask') and method == 'POST':
         q_params = parse_qs(qs)
