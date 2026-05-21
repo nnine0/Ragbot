@@ -142,13 +142,14 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = null;
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? '' : '/api';
 
 function $(id) { return document.getElementById(id); }
 
 async function login() {
   const u = $('username-input').value.trim() || 'user_' + Math.random().toString(36).slice(2, 8);
   try {
-    const res = await fetch('/auth/token', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({user_id: u}) });
+    const res = await fetch(`${API}/auth/token`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({user_id: u}) });
     const d = await res.json();
     autoToken = d.access_token;
     localStorage.setItem(TOKEN_KEY, autoToken);
@@ -193,7 +194,7 @@ async function uploadFile(file) {
   const form = new FormData();
   form.append('file', file);
   try {
-    const res = await fetch('/upload', { method:'POST', headers:{'Authorization':'Bearer '+token}, body:form });
+    const res = await fetch(`${API}/upload`, { method:'POST', headers:{'Authorization':'Bearer '+token}, body:form });
     const d = await res.json();
     if (res.ok) {
       addMsg('system', 'Indexed ' + file.name + ' (' + d.chunks + ' chunks)');
@@ -210,7 +211,7 @@ async function refreshDocs() {
   const token = getToken();
   if (!token) return;
   try {
-    const res = await fetch('/documents', { headers:{'Authorization':'Bearer '+token} });
+    const res = await fetch(`${API}/documents`, { headers:{'Authorization':'Bearer '+token} });
     const d = await res.json();
     const container = $('docs-container');
     const empty = $('empty-docs');
@@ -287,7 +288,7 @@ async function ask(q) {
   setStatus('Searching...', true);
 
   try {
-    const res = await fetch('/ask?question=' + encodeURIComponent(question), {
+    const res = await fetch(`${API}/ask?question=${encodeURIComponent(question)}`, {
       method: 'POST',
       headers: {'Authorization': 'Bearer ' + token},
       signal: currentAbort.signal,
