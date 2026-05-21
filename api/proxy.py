@@ -114,16 +114,6 @@ def search_texts(query, docs):
     scored.sort(key=lambda x: -x['score'])
     return scored
 
-def verify_token(auth_header):
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return None
-    t = auth_header[7:]
-    p = os.path.join(AUTH_DIR, t)
-    if os.path.exists(p):
-        with open(p) as f:
-            return json.load(f)
-    return None
-
 def app(environ, start_response):
     path = environ.get('PATH_INFO', '').lstrip('/') or ''
     method = environ.get('REQUEST_METHOD', 'GET')
