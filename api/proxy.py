@@ -1,7 +1,7 @@
 import os, sys, json, uuid, io, re, textwrap, mimetypes, hmac, hashlib, time, base64
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
-import urllib.request
+import http.client
 
 SECRET_KEY = hashlib.sha256(b'ragbot_vercel_2024').hexdigest()
 DOCS_DIR = '/tmp/ragbot_docs'
@@ -222,15 +222,17 @@ def app(environ, start_response):
         if context:
             prompt = f'Answer the question based only on the provided context.\n\nContext:\n{context[:3000]}\n\nQuestion: {question}\n\nAnswer:'
             try:
-                req_body = json.dumps({'inputs': prompt, 'parameters': {'max_new_tokens': 300, 'temperature': 0.3}}).encode()
-                headers = {'Content-Type': 'application/json'}
-                if hf_token:
-                    headers['Authorization'] = f'Bearer {hf_token}'
-                req = urllib.request.Request('https://api-inference.huggingface.co/models/google/flan-t5-base', data=req_body, headers=headers, method='POST')
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    result = json.loads(resp.read())
-                    if isinstance(result, list) and len(result) > 0:
-                        answer = result[0].get('generated_text', '').strip()
+                req_body = json.dumps({'inputs': prompt, 'parameters': {'max_new_tokens': 300, 'temperature': 0.3}})
+                conn = http.client.HTTPSConnection('api-inference.huggingface.co', timeout=25)
+                conn.request('POST', '/models/google/flan-t5-base', body=req_body, headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {hf_token}',
+                })
+                resp = conn.getresponse()
+                result = json.loads(resp.read())
+                if isinstance(result, list) and len(result) > 0:
+                    answer = result[0].get('generated_text', '').strip()
+                conn.close()
             except Exception as e:
                 log(f'HF API error: {e}')
 
