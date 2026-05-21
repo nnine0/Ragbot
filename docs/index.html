@@ -122,7 +122,9 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = localStorage.getItem(TOKEN_KEY) || '';
-const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '' : '/api';
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ''
+  : window.location.hostname === 'nnine0.github.io' || window.location.href.includes('github.io') ? 'https://ragreader-base.vercel.app'
+  : '';
 
 function $(id) { return document.getElementById(id); }
 
