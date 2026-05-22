@@ -124,7 +124,7 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = localStorage.getItem(TOKEN_KEY) || '';
-const HF_MODEL = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0';
+const HF_MODEL = 'sapientinc/HRM-Text-1B';
 const HF_TOKEN_KEY = 'ragbot_hf_token';
 
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ''
@@ -336,7 +336,7 @@ async function ask(q) {
     }
 
     setStatus('Thinking...', true);
-    const prompt = '<|system|>Answer the question based only on the provided context.</s><|user|>Context:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '</s><|assistant|>';
+    const prompt = '<|im_start|><|quad_end|><|object_ref_end|>Answer the question based only on the provided context.\n\nContext:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '<|im_end|>';
     const hfToken = localStorage.getItem(HF_TOKEN_KEY) || '';
 
     let answer = '';
