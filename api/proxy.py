@@ -198,7 +198,7 @@ def app(environ, start_response):
             os.remove(os.path.join(DOCS_DIR, fn))
         return json_response(start_response, {'status': 'cleared'})
 
-    if route_path.startswith('ask') and method == 'POST':
+    if (route_path.startswith('ask') or route_path.startswith('context')) and method == 'POST':
         q_params = parse_qs(qs)
         question = (q_params.get('question', [''])[0] or '')
         if not question:
@@ -213,36 +213,19 @@ def app(environ, start_response):
 
         context_docs = search_texts(question, docs)
         if not context_docs and docs:
-            context_docs = [{'filename': d['filename'], 'snippet': d['text'][:1000], 'score': 0} for d in docs[:3]]
-        context = '\n\n'.join(f'From {r["filename"]}:\n{r["snippet"][:1000]}' for r in context_docs) if context_docs else ''
+            context_docs = [{'filename': d['filename'], 'snippet': d['text'][:3000], 'score': 0} for d in docs[:3]]
+        context = '\n\n'.join(f'From {r["filename"]}:\n{r["snippet"][:3000]}' for r in context_docs) if context_docs else ''
         filenames = list(set(r['filename'] for r in context_docs)) if context_docs else []
 
-        hf_token = os.environ.get('HF_TOKEN', '')
-        answer = None
-        if context:
-            prompt = f'Answer the question based only on the provided context.\n\nContext:\n{context[:3000]}\n\nQuestion: {question}\n\nAnswer:'
-            try:
-                req_body = json.dumps({'inputs': prompt, 'parameters': {'max_new_tokens': 300, 'temperature': 0.3}})
-                conn = http.client.HTTPSConnection('api-inference.huggingface.co', timeout=25)
-                conn.request('POST', '/models/google/flan-t5-base', body=req_body, headers={
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {hf_token}',
-                })
-                resp = conn.getresponse()
-                result = json.loads(resp.read())
-                if isinstance(result, list) and len(result) > 0:
-                    answer = result[0].get('generated_text', '').strip()
-                conn.close()
-            except Exception as e:
-                log(f'HF API error: {e}')
+        if route_path.startswith('context'):
+            return json_response(start_response, {'context': context[:5000], 'filenames': filenames})
 
-        if not answer:
-            if context_docs:
-                answer = f'Based on your documents:\n\n{context_docs[0]["snippet"][:500]}'
-            elif docs:
-                answer = f'I found documents: {", ".join(f["filename"] for f in docs)}. Ask a specific question about them.'
-            else:
-                answer = 'No documents uploaded yet. Upload a file to get started.'
+        if context_docs:
+            answer = f'Based on your documents:\n\n{context_docs[0]["snippet"][:500]}'
+        elif docs:
+            answer = f'I found documents: {", ".join(f["filename"] for f in docs)}. Ask a specific question about them.'
+        else:
+            answer = 'No documents uploaded yet. Upload a file to get started.'
         resp = json.dumps({'answer': answer, 'sources': [], 'filenames': filenames, 'type': 'done'}).encode()
         h = [('Content-Type', 'application/json; charset=utf-8')] + CORS_HEADERS
         start_response('200 OK', h)

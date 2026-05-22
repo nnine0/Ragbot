@@ -77,8 +77,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div id="empty-docs" style="text-align:center;padding:20px;color:#475569;font-size:0.8rem">No documents uploaded yet</div>
     </div>
 
-    <div class="sidebar-footer">
-      <span id="api-status">Offline</span>
+    <div class="sidebar-footer" style="display:flex;flex-direction:column;gap:4px">
+      <span id="api-status" style="font-size:0.7rem">Offline</span>
+      <input id="hf-token-input" type="password" placeholder="HF token" style="background:#0c0a1d;border:1px solid #1e1b3e;color:#94a3b8;padding:4px 8px;border-radius:4px;font-size:0.7rem;width:100%" onchange="localStorage.setItem('ragbot_hf_token', this.value);if(this.value) this.placeholder='token set'">
     </div>
   </div>
 
@@ -122,6 +123,9 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = localStorage.getItem(TOKEN_KEY) || '';
+const HF_MODEL = 'google/flan-t5-base';
+const HF_TOKEN_KEY = 'ragbot_hf_token';
+
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ''
   : window.location.hostname === 'nnine0.github.io' || window.location.href.includes('github.io') ? 'https://ragreader-base.vercel.app'
   : '';
@@ -174,6 +178,8 @@ function setOnline(online) {
 }
 
 (async function init() {
+  const savedHf = localStorage.getItem(HF_TOKEN_KEY);
+  if (savedHf && $('hf-token-input')) { $('hf-token-input').value = savedHf; $('hf-token-input').placeholder = 'token set'; }
   if (autoToken) {
     try {
       const res = await fetch(`${API}/documents`, { headers: { 'Authorization': 'Bearer ' + autoToken } });
@@ -303,76 +309,67 @@ async function ask(q) {
   addMsg('user', question);
 
   const answerDiv = addMsg('bot', '▊');
-  let answerText = '';
   currentAbort = new AbortController();
   $('ask-btn').disabled = true;
   setStatus('Searching...', true);
 
   try {
-    const res = await apiFetch(`/ask?question=${encodeURIComponent(question)}`, {
+    const ctxRes = await apiFetch(`/context?question=${encodeURIComponent(question)}`, {
       method: 'POST',
       signal: currentAbort.signal,
     });
-    if (!res) { answerDiv.querySelector('.content').textContent = 'Server unreachable'; setStatus('', false); $('ask-btn').disabled = false; return; }
-
-    if (!res.ok) {
-      const err = await res.json();
-      answerDiv.querySelector('.content').textContent = 'Error: ' + (err.detail || 'Unknown error');
-      setStatus('', false);
-      $('ask-btn').disabled = false;
-      return;
+    if (!ctxRes) { answerDiv.querySelector('.content').textContent = 'Server unreachable'; setStatus('', false); $('ask-btn').disabled = false; return; }
+    if (!ctxRes.ok) {
+      const err = await ctxRes.json();
+      answerDiv.querySelector('.content').textContent = 'Error: ' + (err.detail || 'error');
+      setStatus('', false); $('ask-btn').disabled = false; return;
     }
 
-    const ct = res.headers.get('Content-Type') || '';
-    if (ct.includes('application/json')) {
-      const d = await res.json();
-      answerText = d.answer || '';
-      answerDiv.innerHTML = '<div>' + answerText + '</div>';
-      if (d.filenames && d.filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + d.filenames.join(', ') + '</div>';
-    } else {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      let curEvent = '';
-      let sources = [];
-      let filenames = [];
+    const ctx = await ctxRes.json();
+    const context = ctx.context || '';
+    const filenames = ctx.filenames || [];
 
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
+    if (!context) {
+      answerDiv.querySelector('.content').textContent = 'No documents found. Upload a file first.';
+      setStatus('', false); $('ask-btn').disabled = false; return;
+    }
 
-        buf += decoder.decode(value, {stream: true});
-        const parts = buf.split('\n');
-        buf = parts.pop() || '';
+    setStatus('Thinking...', true);
+    const prompt = 'Answer the question based only on the provided context.\n\nContext:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '\n\nAnswer:';
+    const hfToken = localStorage.getItem(HF_TOKEN_KEY) || '';
 
-        for (const line of parts) {
-          if (line.startsWith('event: ')) { curEvent = line.slice(7).trim(); }
-          else if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (curEvent === 'token') {
-              answerText += data;
-              answerDiv.querySelector('.content').textContent = answerText;
-              $('messages').scrollTop = $('messages').scrollHeight;
-            } else if (curEvent === 'status') {
-              setStatus(data, true);
-            } else if (curEvent === 'error') {
-              answerDiv.querySelector('.content').textContent = 'Error: ' + data;
-              setStatus('', false);
-            } else if (curEvent === 'done') {
-              try {
-                const r = JSON.parse(data);
-                answerText = r.answer || answerText;
-                sources = r.sources || [];
-                filenames = r.filenames || [];
-                answerDiv.innerHTML = '<div>' + answerText + '</div>';
-                if (sources.length) answerDiv.innerHTML += '<div class="sources">Chunks: ' + sources.slice(0,3).join(', ') + '</div>';
-                if (filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + filenames.join(', ') + '</div>';
-              } catch(e) { answerDiv.querySelector('.content').textContent = 'Parse error'; }
-            }
+    let answer = '';
+    if (hfToken) {
+      try {
+        const hfRes = await fetch('https://api-inference.huggingface.co/models/' + HF_MODEL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + hfToken },
+          body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 300, temperature: 0.3 } }),
+          signal: currentAbort.signal,
+        });
+        if (hfRes.ok) {
+          const hf = await hfRes.json();
+          if (Array.isArray(hf) && hf[0] && hf[0].generated_text) {
+            answer = hf[0].generated_text.trim();
           }
         }
+      } catch (e) {}
+    }
+
+    if (!answer) {
+      const fallbackRes = await apiFetch(`/ask?question=${encodeURIComponent(question)}`, {
+        method: 'POST', signal: currentAbort.signal,
+      });
+      if (fallbackRes && fallbackRes.ok) {
+        const fb = await fallbackRes.json();
+        answer = fb.answer || 'No answer available';
+      } else {
+        answer = 'No answer available';
       }
     }
+
+    answerDiv.innerHTML = '<div>' + answer + '</div>';
+    if (filenames.length) answerDiv.innerHTML += '<div class="files">From: ' + filenames.join(', ') + '</div>';
     setStatus('', false);
   } catch (err) {
     if (err.name === 'AbortError') return;
