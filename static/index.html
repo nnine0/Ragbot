@@ -345,40 +345,15 @@ async function ask(q) {
         const hfRes = await fetch('https://api-inference.huggingface.co/models/' + HF_MODEL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + hfToken },
-          body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 300, temperature: 0.3 }, options: { use_cache: false }, stream: true }),
+          body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 512, temperature: 0.3, top_p: 0.95 } }),
           signal: currentAbort.signal,
         });
         if (hfRes.ok) {
-          const ct = hfRes.headers.get('Content-Type') || '';
-          if (ct.includes('text/event-stream') || ct.includes('text/event-stream')) {
-            const reader = hfRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = '';
-            while (true) {
-              const {done, value} = await reader.read();
-              if (done) break;
-              buf += decoder.decode(value, {stream: true});
-              const lines = buf.split('\n');
-              buf = lines.pop() || '';
-              for (const line of lines) {
-                if (line.startsWith('data:')) {
-                  try {
-                    const d = JSON.parse(line.slice(5).trim());
-                    if (d.token && d.token.text !== undefined && !d.token.special) {
-                      answer += d.token.text;
-                      answerDiv.innerHTML = '<div>' + answer + '<span class="cursor">▊</span></div>';
-                      $('messages').scrollTop = $('messages').scrollHeight;
-                    }
-                  } catch(e) {}
-                }
-              }
-            }
-          } else {
-            let hf;
-            try { hf = await hfRes.json(); } catch(e) {}
-            if (Array.isArray(hf) && hf[0]) {
-              answer = (hf[0].generated_text || '').trim();
-            }
+          setStatus('Generating...', true);
+          let hf;
+          try { hf = await hfRes.json(); } catch(e) { hf = null; }
+          if (Array.isArray(hf) && hf[0]) {
+            answer = (hf[0].generated_text || '').trim();
           }
         }
       } catch (e) {}
