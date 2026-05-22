@@ -342,6 +342,7 @@ async function ask(q) {
     let answer = '';
     if (hfToken) {
       try {
+        setStatus('Calling HF API...', true);
         const hfRes = await fetch('https://api-inference.huggingface.co/models/' + HF_MODEL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + hfToken },
@@ -355,6 +356,9 @@ async function ask(q) {
           if (Array.isArray(hf) && hf[0]) {
             answer = (hf[0].generated_text || '').trim();
           }
+        } else {
+          const errBody = await hfRes.text();
+          addMsg('system', 'HF API: ' + (errBody.slice(0, 200) || hfRes.status));
         }
       } catch (e) {}
     }
