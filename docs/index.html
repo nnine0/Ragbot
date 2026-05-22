@@ -124,7 +124,7 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = localStorage.getItem(TOKEN_KEY) || '';
-const HF_MODEL = 'sapientinc/HRM-Text-1B';
+const HF_MODEL = 'google/flan-t5-base';
 const HF_TOKEN_KEY = 'ragbot_hf_token';
 
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ''
@@ -336,7 +336,7 @@ async function ask(q) {
     }
 
     setStatus('Thinking...', true);
-    const prompt = '<|im_start|><|quad_end|><|object_ref_end|>Answer the question based only on the provided context.\n\nContext:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '<|im_end|>';
+    const prompt = 'question: ' + question + ' context: ' + context.slice(0, 2500);
     const hfToken = localStorage.getItem(HF_TOKEN_KEY) || '';
 
     let answer = '';
@@ -356,9 +356,6 @@ async function ask(q) {
           if (Array.isArray(hf) && hf[0]) {
             answer = (hf[0].generated_text || '').trim();
           }
-        } else {
-          const errBody = await hfRes.text();
-          addMsg('system', 'HF API: ' + (errBody.slice(0, 200) || hfRes.status));
         }
       } catch (e) {}
     }
