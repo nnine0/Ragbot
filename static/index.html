@@ -54,6 +54,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .samples{display:flex;gap:6px;padding:0 24px;flex-wrap:wrap}
 .samples button{background:none;border:1px solid #1e1b3e;color:#64748b;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.75rem;transition:all .15s}
 .samples button:hover{border-color:#818cf8;color:#e2e8f0}
+.cursor{animation:blink .8s step-end infinite}@keyframes blink{50%{opacity:0}}
 </style>
 </head>
 <body>
@@ -123,7 +124,7 @@ const TOKEN_KEY = 'ragbot_token';
 const USER_KEY = 'ragbot_user';
 let currentAbort = null;
 let autoToken = localStorage.getItem(TOKEN_KEY) || '';
-const HF_MODEL = 'google/flan-t5-base';
+const HF_MODEL = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0';
 const HF_TOKEN_KEY = 'ragbot_hf_token';
 
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ''
@@ -335,7 +336,7 @@ async function ask(q) {
     }
 
     setStatus('Thinking...', true);
-    const prompt = 'Answer the question based only on the provided context.\n\nContext:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '\n\nAnswer:';
+    const prompt = '<|system|>Answer the question based only on the provided context.</s><|user|>Context:\n' + context.slice(0, 3000) + '\n\nQuestion: ' + question + '</s><|assistant|>';
     const hfToken = localStorage.getItem(HF_TOKEN_KEY) || '';
 
     let answer = '';
@@ -344,13 +345,40 @@ async function ask(q) {
         const hfRes = await fetch('https://api-inference.huggingface.co/models/' + HF_MODEL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + hfToken },
-          body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 300, temperature: 0.3 } }),
+          body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 300, temperature: 0.3 }, options: { use_cache: false }, stream: true }),
           signal: currentAbort.signal,
         });
         if (hfRes.ok) {
-          const hf = await hfRes.json();
-          if (Array.isArray(hf) && hf[0] && hf[0].generated_text) {
-            answer = hf[0].generated_text.trim();
+          const ct = hfRes.headers.get('Content-Type') || '';
+          if (ct.includes('text/event-stream') || ct.includes('text/event-stream')) {
+            const reader = hfRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+              const {done, value} = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, {stream: true});
+              const lines = buf.split('\n');
+              buf = lines.pop() || '';
+              for (const line of lines) {
+                if (line.startsWith('data:')) {
+                  try {
+                    const d = JSON.parse(line.slice(5).trim());
+                    if (d.token && d.token.text !== undefined && !d.token.special) {
+                      answer += d.token.text;
+                      answerDiv.innerHTML = '<div>' + answer + '<span class="cursor">▊</span></div>';
+                      $('messages').scrollTop = $('messages').scrollHeight;
+                    }
+                  } catch(e) {}
+                }
+              }
+            }
+          } else {
+            let hf;
+            try { hf = await hfRes.json(); } catch(e) {}
+            if (Array.isArray(hf) && hf[0]) {
+              answer = (hf[0].generated_text || '').trim();
+            }
           }
         }
       } catch (e) {}
